@@ -1,246 +1,55 @@
-# =============================================================================
-# requirements.txt — adjusted for Python 3.11.7 compatibility
-#
-# Legend:
-#   [CHANGED]  — version was bumped for Python 3.11 compatibility
-#   [REMOVED]  — package dropped (not needed / incompatible with 3.11)
-#   [OK]       — original version already works on 3.11 (no change)
-# =============================================================================
+# Core scientific
+numpy
+scipy
+pandas
+llvmlite
 
-# --- Core scientific / numerical ------------------------------------------------
-numpy==1.23.5                       # [OK] 1.23.4+ supports 3.11
-scipy==1.9.3                        # [CHANGED] from unversioned; 1.9.3 is first with full 3.11 wheels
-pandas==2.0.3                       # [CHANGED] from 1.5.3; pandas 2.0+ has proper 3.11 support
-# numba==0.57.1                       # [CHANGED] from 0.56.4; 0.57.0 is first to support 3.11
-llvmlite==0.40.1                    # [CHANGED] from unversioned; paired with numba 0.57.x
+# PyTorch ecosystem
+pytorch-lightning
+torchmetrics
+torchdiffeq
+torchsde
 
-# --- PyTorch ecosystem ----------------------------------------------------------
-# NOTE: torch and torchvision should be installed separately via pip with the
-# appropriate CUDA index URL, e.g.:
-#   pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118
-pytorch-lightning==2.0.9            # [CHANGED] from 1.4.2; 1.x has no 3.11 support
-torchmetrics==1.0.3                 # [CHANGED] from 0.6.0; required by pytorch-lightning 2.x
-pytorch-fid==0.3.0                  # [OK]
-torch-fidelity==0.3.0               # [OK]
-torchdiffeq==0.2.3                  # [OK]
-torchsde                            # [OK]
+# Diffusion / generative
+diffusers
+k-diffusion
+einops
+resize-right
+safetensors
 
-# --- Diffusion / generative models ---------------------------------------------
-diffusers==0.15.0                   # [OK]
-k-diffusion==0.0.16                 # [OK]
-einops==0.3.0                       # [OK]
-resize-right==0.0.2                 # [OK]
-safetensors==0.3.1                  # [OK]
+# HuggingFace / NLP
+transformers
+tokenizers
+huggingface-hub
+sentence-transformers
+sentencepiece
+open-clip-torch
 
-# --- HuggingFace / NLP ---------------------------------------------------------
-transformers==4.31.0                # [OK] but requires tokenizers>=0.13.3
-tokenizers==0.13.3                  # [CHANGED] from 0.12.1; first version with cp311 wheels
-huggingface-hub==0.16.4             # [OK]
-sentence-transformers==2.2.2        # [OK]
-sentencepiece==0.1.99               # [OK]
-open-clip-torch==2.19.0             # [OK]
-clip-anytorch==2.5.2                # [OK]
+# Image / video
+albumentations
+imageio
+opencv-python-headless
+scikit-image
+pillow
 
-# --- Image / video processing ---------------------------------------------------
-albumentations                      # [OK] unpinned
-imageio==2.31.1                     # [CHANGED] from 2.9.0; older version has 3.11 import issues
-imageio-ffmpeg==0.4.8               # [CHANGED] from 0.4.2; minor compat fix
-imgaug==0.4.0                       # [CHANGED] from 0.2.6; 0.2.x is incompatible with newer numpy
-moviepy==1.0.3                      # [OK]
-opencv-python                       # [OK] unpinned
-opencv-python-headless               # [OK] unpinned
-scikit-image==0.21.0                # [CHANGED] from 0.20.0; better 3.11 compat
-pillow>=9.4.0                       # [OK] will be pulled in by other deps
+# ML utilities
+scikit-learn
+timm
+accelerate
 
-# --- ML utilities ---------------------------------------------------------------
-scikit-learn==1.3.0                 # [CHANGED] from 1.2.2; better 3.11 compat
-timm==0.6.13                        # [OK]
-captum==0.6.0                       # [OK]
-grad-cam==1.4.6                     # [OK]
-cleverhans==4.0.0                   # [OK]
-shap                       # [CHANGED] from 0.41.0; 0.41 has numba compat issues on 3.11
-ttach==0.0.3                        # [OK]
-supervision==0.6.0                  # [OK]
-accelerate==0.21.0                  # [OK]
+# Config
+hydra-core
+omegaconf
+pyyaml
 
-# --- Config / serialization -----------------------------------------------------
-hydra-core==1.3.2                   # [OK]
-omegaconf==2.3.0                    # [OK]
-pyyaml==6.0.1                       # [CHANGED] from 6.0; 6.0 fails to build with Cython>=3.0
-pydeprecate==0.3.1                  # [OK]
-easydict==1.10                      # [OK]
-addict==2.4.0                       # [OK]
-jsonmerge==1.9.2                    # [OK]
-jsonschema==4.17.3                  # [OK]
+# Visualization
+matplotlib
+seaborn
 
-# --- Web / API ------------------------------------------------------------------
-flask==2.3.2                        # [OK]
-flask-cors==4.0.0                   # [OK]
-flask-restful==0.3.10               # [OK]
-aiohttp==3.8.4                      # [OK]
-aiosignal==1.3.1                    # [OK]
-async-timeout==4.0.2                # [OK]
-requests-oauthlib==1.3.1            # [OK]
-google-auth==2.17.3                 # [OK]
-google-auth-oauthlib==1.0.0         # [OK]
-google-images-download==2.8.0       # [OK]
-google-search-results==2.4.2        # [OK]
-grpcio==1.53.0                      # [OK]
-h11==0.14.0                         # [OK]
-oauthlib==3.2.2                     # [OK]
+# Logging
+wandb
+tensorboard
 
-# --- Visualization / UI --------------------------------------------------------
-matplotlib==3.7.1                   # [OK]
-matplotlib-inline==0.1.6            # [OK]
-seaborn==0.12.2                     # [OK]
-# altair==4.2.2                       # [OK]
-# streamlit==1.21.0                   # [OK]
-pydeck==0.8.1b0                     # [OK]
-
-# --- Logging / experiment tracking ----------------------------------------------
-wandb==0.14.2                       # [OK]
-tensorboard==2.12.2                 # [OK]
-tensorboard-data-server==0.7.0      # [OK]
-tensorboard-plugin-wit==1.8.1       # [OK]
-test-tube==0.7.5                    # [OK]
-sentry-sdk==1.19.1                  # [OK]
-
-typing_extensions>=4.10.0              # TypeIs (needed by transformers.modeling_utils)
-
-# --- Utilities ------------------------------------------------------------------
-absl-py==1.4.0                      # [OK]
-aniso8601==9.0.1                    # [OK]
-antlr4-python3-runtime==4.9.3       # [OK]
-appdirs==1.4.4                      # [OK]
-asttokens==2.2.1                    # [OK]
-attrs==23.1.0                       # [OK]
-beautifulsoup4==4.12.2              # [OK]
-blinker==1.6.2                      # [OK]
-boltons==23.0.0                     # [OK]
-braceexpand==0.1.7                  # [OK]
-cachetools==5.3.0                   # [OK]
-clean-fid==0.1.35                   # [OK]
-click==8.1.3                        # [OK]
-cloudpickle==2.2.1                  # [OK]
-coloredlogs==15.0.1                 # [OK]
-contourpy==1.0.7                    # [OK]
-cycler==0.11.0                      # [OK]
-decorator==4.4.2                    # [OK]
-dm-tree==0.1.8                      # [OK]
-docker-pycreds==0.4.0               # [OK]
-entrypoints==0.4                    # [OK]
-exceptiongroup==1.1.3               # [OK]
-executing==1.2.0                    # [OK]
-faiss-cpu==1.7.4                    # [OK]
-filelock==3.11.0                    # [OK]
-fire==0.5.0                         # [OK]
-flatbuffers==23.3.3                 # [OK]
-fonttools==4.39.3                   # [OK]
-frozenlist==1.3.3                   # [OK]
-fsspec==2023.4.0                    # [OK]
-ftfy==6.1.1                         # [OK]
-future==0.18.3                      # [OK]
-gast==0.5.4                         # [OK]
-gdown==4.7.1                        # [OK]
-gitdb==4.0.10                       # [OK]
-gitpython==3.1.31                   # [OK]
-h5py==3.9.0                         # [OK]
-humanfriendly==10.0                 # [OK]
-importlib-metadata==6.4.1           # [OK]
-importlib-resources==5.12.0         # [OK]
-invisible-watermark==0.1.5          # [OK]
-ipython==8.12.0                     # [OK]
-itsdangerous==2.1.2                 # [OK]
-jedi==0.18.2                        # [OK]
-jinja2==3.1.2                       # [OK]
-joblib==1.2.0                       # [OK]
-kaggle==1.5.13                      # [OK]
-kiwisolver==1.4.4                   # [OK]
-kornia==0.6.0                       # [OK]
-lazy-loader==0.2                    # [OK]
-markdown==3.4.3                     # [OK]
-markdown-it-py==2.2.0               # [OK]
-markupsafe==2.1.2                   # [OK]
-mdurl==0.1.2                        # [OK]
-mnist==0.2.2                        # [OK]
-mpmath==1.3.0                       # [OK]
-multidict==6.0.4                    # [OK]
-networkx==3.1                       # [OK]
-nltk==3.8.1                         # [OK]
-onnx==1.13.1                        # [OK]
-onnxruntime                         # [OK] unpinned
-outcome==1.2.0                      # [OK]
-packaging==23.1                     # [OK]
-parso==0.8.3                        # [OK]
-pathtools==0.1.2                    # [OK]
-pexpect==4.8.0                      # [OK]
-pickleshare==0.7.5                  # [OK]
-proglog==0.1.10                     # [OK]
-prometheus-client==0.17.1           # [OK]
-prompt-toolkit==3.0.38              # [OK]
-protobuf==3.20.3                    # [OK]
-psutil==5.9.4                       # [OK]
-ptyprocess==0.7.0                   # [OK]
-pudb==2019.2                        # [OK]
-pure-eval==0.2.2                    # [OK]
-pyarrow==11.0.0                     # [OK]
-pyasn1==0.4.8                       # [OK]
-pyasn1-modules==0.2.8               # [OK]
-pycocotools==2.0.6                  # [OK]
-pycodestyle==2.11.0                 # [OK]
-pygments==2.15.0                    # [OK]
-pympler==1.0.1                      # [OK]
-pyparsing==3.0.9                    # [OK]
-pyrsistent==0.19.3                  # [OK]
-python-dateutil==2.8.2              # [OK]
-python-slugify==8.0.1               # [OK]
-pytz==2023.3                        # [OK]
-pytz-deprecation-shim==0.1.0.post0  # [OK]
-pywavelets==1.4.1                   # [OK]
-regex==2023.3.23                    # [OK]
-rich==13.3.4                        # [OK]
-rsa==4.9                            # [OK]
-setproctitle==1.3.2                 # [OK]
-six==1.16.0                         # [OK]
-slicer==0.0.7                       # [OK]
-smmap==5.0.0                        # [OK]
-sniffio==1.3.0                      # [OK]
-sortedcontainers==2.4.0             # [OK]
-soupsieve==2.4.1                    # [OK]
-stack-data==0.6.2                   # [OK]
-sympy==1.11.1                       # [OK]
-tensorflow-probability==0.21.0      # [OK]
-termcolor==2.3.0                    # [OK]
-text-unidecode==1.3                 # [OK]
-threadpoolctl==3.1.0                # [OK]
-tifffile==2023.4.12                 # [OK]
-toml==0.10.2                        # [OK]
-tomli==2.0.1                        # [OK]
-toolz==0.12.0                       # [OK]
-tornado==6.2                        # [OK]
-tqdm==4.65.0                        # [OK]
-traitlets==5.9.0                    # [OK]
-trampoline==0.1.2                   # [OK]
-trio==0.22.2                        # [OK]
-trio-websocket==0.10.3              # [OK]
-tzdata==2023.3                      # [OK]
-tzlocal==4.3                        # [OK]
-urwid==2.1.2                        # [OK]
-validators==0.20.0                  # [OK]
-watchdog==3.0.0                     # [OK]
-wcwidth==0.2.6                      # [OK]
-werkzeug==2.3.7                     # [OK]
-wsproto==1.2.0                      # [OK]
-yapf==0.33.0                        # [OK]
-yarl==1.8.2                         # [OK]
-zipp==3.15.0                        # [OK]
-selenium==4.11.2                    # [OK]
-
-# --- REMOVED packages (incompatible / unnecessary on Python 3.11) ---------------
-# backports-zoneinfo==0.2.1         # [REMOVED] built into stdlib since 3.9; fails to compile on 3.11
-# nose==1.3.7                       # [REMOVED] unmaintained since 2015; broken on 3.11 (use pytest)
-# backcall==0.2.0                   # [REMOVED] deprecated; IPython 8.12+ doesn't need it on 3.11
-# pkgutil-resolve-name==1.3.10      # [REMOVED] backport for <3.9; built into stdlib on 3.11
-
-# --- Git-based installs (install manually after pip install -r) -----------------
-# taming-transformers @ git+https://github.com/CompVis/taming-transformers.git@master
+# Utilities
+tqdm
+einops

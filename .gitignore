@@ -1,7 +1,9 @@
-__pycache__
+**/__pycache__
+**/.lightning_studio
 outputs
 results
 latent_diffusion.egg*
+ldm.egg*
 models/ldm
 .vscode
 .idea
@@ -12,3 +14,4 @@ checkpoints
 data/MNIST/raw
 GroumdingDINO
 taming-transformers
+**/.egg*

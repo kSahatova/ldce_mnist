@@ -9,7 +9,7 @@ Usage (from the repository root):
     python train_ldm_mnist.py --output_dir ./checkpoints/mnist_ldm --epochs 200
 
     # Resume from a checkpoint
-    python train_ldm_mnist.py --resume_ckpt ./checkpoints/mnist_ldm/last.ckpt
+    python train_ldm_mnist.py --resume_ckpt mnist_ldce/checkpoints/mnist_ldm/last.ckpt
 
 Key design choices
 ──────────────────
@@ -125,12 +125,12 @@ def parse_args():
     p = argparse.ArgumentParser(
         description='Train a class-conditional LDM on MNIST'
     )
-    p.add_argument('--cfg_path',    default='mnist_ldce/ldm_mnist.yaml',
+    p.add_argument('--cfg_path',    default='mnist_ldce/configs/ldm_mnist.yaml',
                    help='Path to the model architecture YAML '
                         '(default: mnist_ldce/ldm_mnist.yaml)')
-    p.add_argument('--output_dir',  default='./checkpoints/mnist_ldm',
+    p.add_argument('--output_dir',  default='mnist_ldce/checkpoints/mnist_ldm',
                    help='Directory where checkpoints are saved')
-    p.add_argument('--data_root',   default='./data')
+    p.add_argument('--data_root',   default='mnist_ldce/data')
     p.add_argument('--epochs',      type=int,   default=200)
     p.add_argument('--batch_size',  type=int,   default=64)
     p.add_argument('--lr',          type=float, default=2e-5,
@@ -160,17 +160,6 @@ def main():
     config.model.base_learning_rate = args.lr
 
     model = instantiate_from_config(config.model)
-
-    if args.resume_ckpt:
-        print(f"Resuming from checkpoint: {args.resume_ckpt}")
-        ckpt = torch.load(args.resume_ckpt, map_location='cpu')
-        missing, unexpected = model.load_state_dict(ckpt['state_dict'], strict=False)
-        if missing:
-            print(f"  Missing keys    ({len(missing)}): {missing[:5]}"
-                  f"{'...' if len(missing) > 5 else ''}")
-        if unexpected:
-            print(f"  Unexpected keys ({len(unexpected)}): {unexpected[:5]}"
-                  f"{'...' if len(unexpected) > 5 else ''}")
 
     datamodule = MNISTDataModule(
         image_size=args.image_size,
@@ -218,7 +207,7 @@ def main():
     print(f"  cfg_dropout = {args.cfg_dropout}")
     print(f"  output_dir  = {args.output_dir}\n")
 
-    trainer.fit(model, datamodule=datamodule)
+    trainer.fit(model, datamodule=datamodule, ckpt_path=args.resume_ckpt)
 
     print(f"\nTraining complete.")
     print(f"  Best checkpoint : {best_cb.best_model_path}")

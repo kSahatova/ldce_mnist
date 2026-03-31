@@ -1,5 +1,7 @@
 import sys
 import os
+import numpy as np
+
 import torch
 import pytorch_lightning as pl
 import torch.nn.functional as F
@@ -12,7 +14,7 @@ _TAMING_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'taming-transf
 if os.path.isdir(_TAMING_DIR) and _TAMING_DIR not in sys.path:
     sys.path.insert(0, os.path.abspath(_TAMING_DIR))
 
-from taming.modules.vqvae.quantize import VectorQuantizer2 as VectorQuantizer  # noqa: E402
+  # noqa: E402
 
 from ldm.modules.diffusionmodules.model import Encoder, Decoder  # noqa: E402
 from ldm.modules.distributions.distributions import DiagonalGaussianDistribution  # noqa: E402
@@ -39,6 +41,8 @@ class VQModel(pl.LightningModule):
                  use_ema=False
                  ):
         super().__init__()
+        from taming.modules.vqvae.quantize import VectorQuantizer2 as VectorQuantizer
+
         self.embed_dim = embed_dim
         self.n_embed = n_embed
         self.image_key = image_key

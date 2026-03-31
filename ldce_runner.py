@@ -24,11 +24,13 @@ import importlib.abc
 import importlib.machinery
 import os
 import pathlib
+import pickle
 import random
 import sys
 import types
 
 import numpy as np
+from numpy.random import multivariate_normal, uniform
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -214,22 +216,67 @@ def build_sampler(diff_model: nn.Module, classifier: nn.Module,
 # Perturbation
 # ─────────────────────────────────────────────────────────────────────────────
 
-def perturb(images: torch.Tensor, cfg: dict) -> torch.Tensor:
-    """Apply configured noise perturbation to a batch in [0, 1].
+def perturb_sample(
+    input_images: np.ndarray,
+    n_samples: int = 1,
+    type: str = "uniform",
+    epsilon: float | None = None,
+    channels_last: bool = False,
+    std: float = 0.1,
+    noise_seed: int | None = None,
+) -> np.ndarray:
+    """Generate perturbed samples around the input images.
 
-    Supported types:
-        gaussian  – additive Gaussian noise  (std configurable)
-        uniform   – additive uniform noise   (magnitude configurable)
+    Args:
+        input_images : numpy array of shape (B, C, H, W) or (C, H, W).
+        n_samples    : number of perturbed samples to generate per image.
+        type         : 'normal' or 'uniform'.
+        epsilon      : noise magnitude / clip bound.
+        channels_last: set True if input is (B, H, W, C); False for PyTorch
+                       (B, C, H, W) convention (default).
+        std          : standard deviation for normal noise.
+        noise_seed   : if given, numpy RNG is reset to this seed before
+                       sampling — guarantees identical base draws when called
+                       repeatedly with different epsilon values.
+    Returns:
+        numpy array of shape (B, n_samples, C, H, W) or (B, n_samples, H, W, C).
     """
-    kind = cfg.get("type", "gaussian")
-    if kind == "gaussian":
-        noise = torch.randn_like(images) * cfg.get("std", 0.1)
-    elif kind == "uniform":
-        mag   = cfg.get("magnitude", 0.1)
-        noise = (torch.rand_like(images) * 2.0 - 1.0) * mag
+    data = input_images
+    if len(input_images.shape) == 3:
+        data = np.expand_dims(input_images, axis=0)
+
+    if channels_last:
+        # input layout: (B, H, W, C)
+        batch_size, height, width, channels = data.shape
+        result_shape = (batch_size, n_samples, height, width, channels)
     else:
-        raise ValueError(f"Unknown perturbation type: '{kind}'")
-    return (images + noise).clamp(0.0, 1.0)
+        # input layout: (B, C, H, W)  ← PyTorch default
+        batch_size, channels, height, width = data.shape
+        result_shape = (batch_size, n_samples, channels, height, width)
+
+    data = np.expand_dims(data, axis=1)
+    data = np.tile(data, reps=[1, n_samples, 1, 1, 1])
+
+    if noise_seed is not None:
+        np.random.seed(noise_seed)
+
+    if type == "normal":
+        mean       = np.zeros(channels * height * width)
+        covariance = np.eye(channels * height * width) * std ** 2
+        noise      = multivariate_normal(mean, covariance,
+                                         size=(batch_size, n_samples))
+        noise      = noise.reshape(*result_shape)
+        if epsilon is not None:
+            noise = np.clip(noise, -epsilon, epsilon)
+
+    elif type == "uniform":
+        noise = uniform(-epsilon, epsilon, size=result_shape)
+
+    else:
+        raise ValueError(f"Unknown perturbation type: '{type}'")
+
+    perturbed_data = np.clip(data + noise, a_min=0, a_max=1)
+    return perturbed_data
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -342,46 +389,32 @@ def save_sample(out_dir: str, uidx: int,
                 perturbed: torch.Tensor | None = None,
                 softmax_perturbed: torch.Tensor | None = None,
                 softmax_cf_pert: torch.Tensor | None = None,
-                save_only_successful: bool = True) -> bool:
-    """Save all artefacts for one sample.  Returns True if anything was saved."""
+                save_only_successful: bool = True) -> dict | None:
+    """Build a record for one sample.
+
+    Returns a dict with the original image, its counterfactual explanation,
+    source class, and target class, or None if the sample is skipped.
+    The caller is responsible for accumulating records and writing the .pkl.
+    """
     orig_success = softmax_cf_orig.argmax().item() == tgt
     if save_only_successful and not orig_success:
-        return False
+        return None
 
-    fname = f"{uidx:05d}"
-    meta  = {
-        "unique_id":   uidx,
-        "source":      DIGIT_NAMES[label],
-        "target":      DIGIT_NAMES[tgt],
-        "original": {
-            "image":   src,
-            "in_pred": DIGIT_NAMES[softmax_in.argmax().item()],
-            "in_confid": softmax_in.max().item(),
-            **_cf_metrics(src, cf_orig, softmax_cf_orig, tgt),
-        },
+    record = {
+        "unique_id": uidx,
+        "source":    DIGIT_NAMES[label],
+        "target":    DIGIT_NAMES[tgt],
+        "image":     src.cpu(),
+        "image_cf":  cf_orig.cpu(),
     }
-
-    save_image(src.clamp(0, 1),
-               os.path.join(out_dir, "original", f"{fname}.png"))
-    save_image(cf_orig.clamp(0, 1),
-               os.path.join(out_dir, "cf_original", f"{fname}.png"))
 
     if cf_pert is not None:
         pert_success = softmax_cf_pert.argmax().item() == tgt
         if not save_only_successful or pert_success:
-            meta["perturbed"] = {
-                "image":   perturbed,
-                "in_pred": DIGIT_NAMES[softmax_perturbed.argmax().item()],
-                "in_confid": softmax_perturbed.max().item(),
-                **_cf_metrics(perturbed, cf_pert, softmax_cf_pert, tgt),
-            }
-            save_image(perturbed.clamp(0, 1),
-                       os.path.join(out_dir, "perturbed", f"{fname}.png"))
-            save_image(cf_pert.clamp(0, 1),
-                       os.path.join(out_dir, "cf_perturbed", f"{fname}.png"))
+            record["image_perturbed"]    = perturbed.cpu()
+            record["image_cf_perturbed"] = cf_pert.cpu()
 
-    torch.save(meta, os.path.join(out_dir, "metadata", f"{fname}.pth"))
-    return True
+    return record
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -439,12 +472,21 @@ def load_config(path: str) -> dict:
         return yaml.safe_load(fh)
 
 
-def prepare_output_dirs(out_dir: str, with_perturbation: bool) -> None:
-    dirs = ["original", "cf_original", "metadata"]
-    if with_perturbation:
-        dirs += ["perturbed", "cf_perturbed"]
-    for d in dirs:
-        pathlib.Path(os.path.join(out_dir, d)).mkdir(parents=True, exist_ok=True)
+def prepare_output_dirs(out_dir: str) -> None:
+    pathlib.Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+
+def load_results_pkl(pkl_path: str) -> list[dict]:
+    """Load existing results pkl, or return an empty list if none exists."""
+    if os.path.exists(pkl_path):
+        with open(pkl_path, "rb") as fh:
+            return pickle.load(fh)
+    return []
+
+
+def save_results_pkl(pkl_path: str, records: list[dict]) -> None:
+    with open(pkl_path, "wb") as fh:
+        pickle.dump(records, fh)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -460,8 +502,11 @@ def main(cfg: dict, device: torch.device) -> None:
     with_pert      = pert_cfg.get("enabled", False)
     save_only_succ = cfg.get("save_only_successful", True)
 
-    prepare_output_dirs(out_dir, with_pert)
-    tracker = CompletedTracker(os.path.join(out_dir, "completed.txt"))
+    prepare_output_dirs(out_dir)
+    tracker  = CompletedTracker(os.path.join(out_dir, "completed.txt"))
+    pkl_path = os.path.join(out_dir, "results.pkl")
+    records  = load_results_pkl(pkl_path)
+    print(f"  results.pkl: {len(records)} records already saved")
 
     # ── Models ────────────────────────────────────────────────────────────────
     print("Loading classifier …")
@@ -533,7 +578,21 @@ def main(cfg: dict, device: torch.device) -> None:
         perturbed        = None
 
         if with_pert:
-            perturbed = perturb(images, pert_cfg)
+            # perturb_sample works on numpy (B, C, H, W); n_samples=1 so we
+            # squeeze the samples axis to get back (B, C, H, W).
+            images_np = images.cpu().numpy()
+            perturbed_np = perturb_sample(
+                images_np,
+                n_samples    = 1,
+                type         = pert_cfg.get("type", "uniform"),
+                epsilon      = pert_cfg.get("magnitude", 0.1),
+                channels_last= False,
+                std          = pert_cfg.get("std", 0.1),
+                noise_seed   = pert_cfg.get("noise_seed"),
+            )                                          # (B, 1, C, H, W)
+            perturbed = torch.from_numpy(
+                perturbed_np[:, 0]                     # (B, C, H, W)
+            ).to(device)
             cf_pert   = generate_cf(
                 diff_model, sampler, perturbed, tgt_classes,
                 cfg["scale"], t_enc, seed,
@@ -553,7 +612,7 @@ def main(cfg: dict, device: torch.device) -> None:
             uidx = unique_ids[j].item()
             tgt  = tgt_classes[j].item()
 
-            saved = save_sample(
+            record = save_sample(
                 out_dir,
                 uidx,
                 src              = images[j].cpu(),
@@ -569,11 +628,14 @@ def main(cfg: dict, device: torch.device) -> None:
                 save_only_successful=save_only_succ,
             )
             tracker.mark_done(uidx)
-            batch_saved += saved
+            if record is not None:
+                records.append(record)
+                batch_saved += 1
 
+        save_results_pkl(pkl_path, records)
         total_saved += batch_saved
         print(f"  Saved {batch_saved}/{len(labels)} this batch  "
-              f"(total: {total_saved})")
+              f"(total: {total_saved}, pkl: {len(records)} records)")
         print(f"  orig  preds: {logits_in.argmax(1).tolist()}  →  "
               f"{logits_cf_orig.argmax(1).tolist()}")
 

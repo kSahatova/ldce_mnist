@@ -1,0 +1,97 @@
+# Architecture config for a class-conditional Latent Diffusion Model on MNIST.
+#
+# Pipeline
+# ────────
+#   image (32×32×3)
+#     → AutoencoderKL encoder  →  latent z (4×8×8)
+#     → noisy z̃               (forward diffusion)
+#     → UNet denoiser          (class-conditioned, operates in 4×8×8 latent space)
+#     → denoised z             (reverse diffusion)
+#     → AutoencoderKL decoder  →  counterfactual image (32×32×3)
+#
+# Key design choices
+# ──────────────────
+#  • AutoencoderKL as first stage — must be trained first via train_vae_mnist.py.
+#    The ckpt_path below is loaded and the VAE is frozen during LDM training.
+#  • scale_by_std: true — scale_factor is computed automatically from the
+#    empirical std of the encoded training latents on the first batch.
+#  • ClassEmbedder with n_classes=11: digit classes 0–9 plus null class 10
+#    (used for classifier-free guidance during inference).
+#  • UNet operates in the 4×8×8 latent space.
+#  • context_dim: 256 must match ClassEmbedder embed_dim.
+#
+# Training
+# ────────
+#   python train_ldm_mnist.py --output_dir ./checkpoints/mnist_ldm --epochs 200
+#
+# LDCE inference
+# ──────────────
+#   python ldce_mnist_ldm.py
+
+model:
+  target: ldm.models.diffusion.ddpm.LatentDiffusion
+  params:
+    learning_rate: 2.0e-5
+    linear_start: 0.0015
+    linear_end:   0.0195
+    num_timesteps_cond: 1
+    log_every_t: 200
+    timesteps:  500 #1000
+    first_stage_key: "image"
+    cond_stage_key:  "class_label"
+    # Spatial size of the latent tensor the UNet sees.
+    # With AutoencoderKL f=4 (2 downsampling stages): 32 / 4 = 8
+    image_size: 8
+    channels: 4             # latent channel depth (embed_dim of the VAE)
+    cond_stage_trainable: false
+    conditioning_key: crossattn
+    monitor: val/loss_simple_ema
+    scale_factor: 1.0       # overwritten on first batch when scale_by_std=true
+    scale_by_std: true      # auto-compute 1/std of encoded latents
+    use_ema: true
+
+    unet_config:
+      target: ldm.modules.diffusionmodules.openaimodel.UNetModel
+      params:
+        image_size: 8
+        in_channels: 4
+        out_channels: 4
+        model_channels: 96 #128
+        # Attention at downsampling factors 2 and 4 of the 8×8 latent:
+        #   factor 2 → 4×4,  factor 4 → 2×2
+        attention_resolutions: [2] #[2, 4]
+        num_res_blocks: 2
+        channel_mult: [1, 2] #[1, 2, 4]
+        num_heads: 4
+        use_spatial_transformer: true
+        transformer_depth: 1
+        context_dim: 128 #256    # must match ClassEmbedder embed_dim
+
+    # Frozen VAE first stage — load the checkpoint trained by train_vae_mnist.py.
+    # lossconfig uses Identity because the first stage is never trained here.
+    first_stage_config:
+      target: ldm.models.autoencoder.AutoencoderKL
+      params:
+        embed_dim: 4
+        ckpt_path: "mnist_ldce/checkpoints/mnist_vae/mnist_vae_best-v2.ckpt"
+        lossconfig:
+          target: torch.nn.Identity
+        ddconfig:
+          double_z: True
+          z_channels: 4
+          resolution: 32
+          in_channels: 3
+          out_ch: 3
+          ch: 64
+          ch_mult: [1, 2, 2]
+          num_res_blocks: 2
+          attn_resolutions: [8]
+          dropout: 0.0
+
+    # Class-conditional embedding: digits 0–9 plus null/unconditional class 10.
+    cond_stage_config:
+      target: ldm.modules.encoders.modules.ClassEmbedder
+      params:
+        n_classes: 11         # 10 digit classes + 1 null/unconditional (index 10)
+        embed_dim: 128 #256        # must match unet_config.context_dim
+        key: "class_label"

@@ -1,0 +1,105 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# LDCE run configuration for MNIST with a Latent Diffusion Model (LDM).
+#
+# Mirrors config.yaml but uses the class-conditional LDM (ldm_mnist.yaml)
+# whose UNet diffuses in the VAE latent space, corresponding to the paper's
+# LDCE-cls setup (Rombach et al., 2022 architecture, adapted for MNIST).
+#
+# Prerequisites
+# ─────────────
+#   1. Train the VAE  : python train_vae_mnist.py
+#   2. Train the LDM  : python train_ldm_mnist.py
+#   3. Run LDCE       : python ldce_mnist_ldm.py
+# ──────────────────────────────────────────────────────────────────────────────
+
+resume: false
+record_intermediate_results: false
+evaluate_classifier: false
+save_only_successful: true
+output_dir: mnist_ldce/results
+
+
+# ── Model paths ───────────────────────────────────────────────────────────────
+
+diffusion_model:
+  cfg_path:  "mnist_ldce/configs/ldm_mnist.yaml"
+  ckpt_path: "mnist_ldce/checkpoints/mnist_ldm/mnist_ldm_best.ckpt"
+
+classifier_model:
+  args:
+      input_channels: 1
+      in_conv_channels: [1, 8, 16]
+      out_conv_channels: [8, 16, 32]
+      conv_kernels: [5, 5, 3]
+      softmax_flag: True
+      num_classes: 10
+
+  input_size: 28
+
+  ckpt_path: "mnist_ldce/checkpoints/mnist_classifier/classifier_mnist.pth"
+
+  # true  → classifier accepts raw [0, 1] images (no ImageNet normalisation).
+  classifier_wrapper: true
+  mnist_normalisation: false
+
+
+# ── Generation settings ───────────────────────────────────────────────────────
+
+n_samples_per_class: 1
+
+# Slightly larger noise budget than the pixel-space model to allow the
+# LDM more freedom to edit digit shape in latent space.
+strength: 0.6
+
+# Higher CFG scale than the pixel-space config (was 1.0).
+# Latent diffusion benefits from a stronger push toward the target class.
+# The paper uses ~3–5 for ImageNet; 3.0 is a good starting point for MNIST.
+scale: 3.0
+
+ddim_steps: 200
+ddim_eta: 0.0
+log_rate: 10
+seed: 0
+
+
+# ── Data settings ─────────────────────────────────────────────────────────────
+
+data:
+  root:        "mnist_ldce/data"
+  split:       "test"
+  batch_size:  8
+  # VAE input resolution — must stay 32×32 (latent becomes 8×8 inside the model).
+  image_size:  32
+  num_workers: 4
+  max_samples: 100
+  filter_classes: [0, 3, 4, 5, 9]
+
+
+# ── Input perturbation ────────────────────────────────────────────────────────
+
+perturbation:
+  enabled:   false
+  type:      gaussian
+  std:       0.1
+  magnitude: 0.1
+
+
+# ── Target class selection ────────────────────────────────────────────────────
+
+target_class_method: "fixed"
+target_class: 8
+
+
+# ── LDCE sampler hyper-parameters ────────────────────────────────────────────
+
+sampler:
+  self_recurrence: 0
+  enforce_same_norms: true
+  guidance: "projected"
+  cone_projection_type: "zero_binning"
+  classifier_lambda: 2.0
+  dist_lambda: 0.25
+  masked_guidance: false
+  backprop_diffusion: true
+  lp_custom: 1
+  deg_cone_projection: 40.

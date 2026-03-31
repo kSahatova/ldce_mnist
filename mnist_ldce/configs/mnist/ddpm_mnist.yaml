@@ -1,0 +1,75 @@
+# Architecture config for a class-conditional pixel-space DDPM on MNIST.
+#
+# This file describes the MODEL ARCHITECTURE only – not the LDCE run settings
+# (those live in config.yaml).  Keep it in sync with any checkpoint you use:
+# the architecture here must exactly match the one used when training.
+#
+# Key design choices
+# ──────────────────
+#  • IdentityFirstStage  → pixel-space diffusion (no separate VAE).
+#    The UNet operates directly on 32 × 32 × 3 images.
+#  • ClassEmbedder with n_classes = 11  → 10 digit classes (0–9) + 1
+#    unconditional/null class (index 10, used for classifier-free guidance).
+#  • context_dim = 256 must match the ClassEmbedder embed_dim below.
+#
+# Training (optional – if you don't have a checkpoint yet)
+# ─────────────────────────────────────────────────────────
+#   Use a PyTorch-Lightning training script compatible with the ldm framework,
+#   e.g. the one from https://github.com/CompVis/latent-diffusion, pointing
+#   --base to this file.  A small model (model_channels=128) trains in a few
+#   hours on a single GPU with the MNIST dataset.
+
+model:
+  target: ldm.models.diffusion.ddpm.LatentDiffusion
+  params:
+    learning_rate: 3.0e-4
+    linear_start: 0.0015
+    linear_end:   0.0195
+    num_timesteps_cond: 1
+    log_every_t: 200
+    timesteps:  500
+    first_stage_key: "image"
+    cond_stage_key:  "class_label"
+    # Spatial size of the latent / pixel tensor the UNet sees.
+    # With IdentityFirstStage this equals the image resolution.
+    image_size: 32
+    channels: 3             # 3-channel (grayscale × 3 from dataset.py)
+    cond_stage_trainable: false
+    conditioning_key: crossattn
+    monitor: val/loss_simple_ema
+    scale_factor: 1.0       # no scaling – IdentityFirstStage passes pixels through
+    use_ema: true
+
+    unet_config:
+      target: ldm.modules.diffusionmodules.openaimodel.UNetModel
+      params:
+        image_size: 32
+        in_channels: 3
+        out_channels: 3
+        model_channels: 128
+        # attention_resolutions are the DOWNSAMPLING FACTORS at which self/cross
+        # attention layers are inserted.
+        # With channel_mult [1,2,4] a 32×32 image has resolutions:
+        #   factor 1 → 32×32,  factor 2 → 16×16,  factor 4 → 8×8
+        attention_resolutions: [2, 4]
+        num_res_blocks: 2
+        channel_mult: [1, 2, 4]
+        num_heads: 4
+        use_spatial_transformer: true
+        transformer_depth: 1
+        # Must match ClassEmbedder embed_dim below
+        context_dim: 256
+
+    # Pixel-space first stage: encode/decode are identity operations
+    first_stage_config:
+      target: ldm.models.autoencoder.IdentityFirstStage
+      params:
+        vq_interface: true    # required for get_first_stage_encoding() compatibility
+
+    # Class-conditional embedding
+    cond_stage_config:
+      target: ldm.modules.encoders.modules.ClassEmbedder
+      params:
+        n_classes: 11         # 10 digit classes (0–9) + 1 null/unconditional (10)
+        embed_dim: 256        # must match unet_config.context_dim
+        key: "class_label"

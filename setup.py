@@ -1,7 +1,8 @@
 from setuptools import setup, find_packages
 
+# TODO: combine requirements in  the setup file 
 setup(
-    name='latent-diffusion',
+    name='ldm',
     version='0.0.1',
     description='',
     packages=find_packages(),

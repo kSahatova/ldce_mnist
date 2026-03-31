@@ -1,7 +1,10 @@
 import torch
 import torch.nn as nn
 
-from taming.modules.losses.vqperceptual import *  # TODO: taming dependency yes/no?
+from taming.modules.losses.lpips import LPIPS 
+from taming.modules.losses.vqperceptual import adopt_weight, vanilla_d_loss, hinge_d_loss
+from taming.modules.discriminator.model import NLayerDiscriminator, weights_init
+
 
 
 class LPIPSWithDiscriminator(nn.Module):

@@ -95,14 +95,14 @@ class VAEDataModule(pl.LightningDataModule):
 
 def parse_args():
     p = argparse.ArgumentParser(description='Train a KL-VAE on MNIST')
-    p.add_argument('--cfg_path',    default='mnist_ldce/autoencoder_mnist_kl.yaml',
+    p.add_argument('--cfg_path',    default='mnist_ldce/configs/autoencoderkl_mnist.yaml',
                    help='Path to the model architecture YAML')
     p.add_argument('--output_dir',  default='./checkpoints/mnist_vae',
                    help='Directory where checkpoints are saved')
     p.add_argument('--data_root',   default='./data')
-    p.add_argument('--epochs',      type=int,   default=50)
-    p.add_argument('--batch_size',  type=int,   default=64)
-    p.add_argument('--lr',          type=float, default=4.5e-6)
+    p.add_argument('--epochs',      type=int,   default=30)
+    p.add_argument('--batch_size',  type=int,   default=128)
+    p.add_argument('--lr',          type=float, default=3e-4)
     p.add_argument('--image_size',  type=int,   default=32)
     p.add_argument('--num_workers', type=int,   default=4)
     p.add_argument('--save_every_n_epochs', type=int, default=5)
