@@ -7,7 +7,7 @@ import os
 import json
 import random
 
-from data.datasets import CUB
+from ldm.data.datasets import CUB
 
 class SimSiam(nn.Module):
     """

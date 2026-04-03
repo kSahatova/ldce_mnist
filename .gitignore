@@ -15,3 +15,5 @@ data/MNIST/raw
 GroumdingDINO
 taming-transformers
 **/.egg*
+assets/data
+data

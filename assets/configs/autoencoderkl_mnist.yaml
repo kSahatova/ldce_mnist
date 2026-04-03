@@ -10,7 +10,9 @@
 # The resulting checkpoint is consumed by ldm_mnist.yaml as first_stage_config.
 
 data:
-  name:  MNIST
+  name:  FashionMNIST
+  classes: [0, 2, 4, 6]
+  undersample: True
 
 model:
   base_learning_rate: 3e-4 #4.5e-6
