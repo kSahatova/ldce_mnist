@@ -28,6 +28,11 @@
 # ──────────────
 #   python ldce_mnist_ldm.py
 
+data:
+  name:  FashionMNIST
+  classes: [0, 2, 4, 6]
+  undersample: False
+
 model:
   target: ldm.models.diffusion.ddpm.LatentDiffusion
   params:
@@ -73,7 +78,8 @@ model:
       target: ldm.models.autoencoder.AutoencoderKL
       params:
         embed_dim: 4
-        ckpt_path: "/teamspace/studios/this_studio/ldce/mnist_ldce/checkpoints/mnist_vae/mnist_vae_best-v2.ckpt"
+        ckpt_path: "/teamspace/studios/this_studio/ldce/mnist_ldce/checkpoints/fmnist_vae/multi/fmnist_vae_best.ckpt"
+        # ckpt_path: "/teamspace/studios/this_studio/ldce/mnist_ldce/checkpoints/mnist_vae/mnist_vae_best.ckpt"
         lossconfig:
           target: torch.nn.Identity
         ddconfig:
