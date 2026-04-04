@@ -5,7 +5,7 @@ The architecture is defined in mnist_ldce/autoencoder_mnist_kl.yaml.
 The resulting checkpoint is used as the first stage in ldm_mnist.yaml.
 
 Usage (from the repository root):
-    python train_vae_mnist.py --output_dir ./checkpoints/mnist_vae --epochs 50
+    python train_vae.py --output_dir assets/checkpoints/fmnist_vae/multi --epochs 50
 
 Key design choices
 ──────────────────
@@ -147,7 +147,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="Train a KL-VAE on MNIST")
     p.add_argument(
         "--cfg_path",
-        default="assests/configs/autoencoderkl_mnist.yaml",
+        default="assets/configs/autoencoderkl_mnist.yaml",
         help="Path to the model architecture YAML",
     )
     p.add_argument(
@@ -157,7 +157,7 @@ def parse_args():
     )
     p.add_argument("--data_root", default="./data")
     p.add_argument("--epochs", type=int, default=30)
-    p.add_argument("--batch_size", type=int, default=128)
+    p.add_argument("--batch_size", type=int, default=32)
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--image_size", type=int, default=32)
     p.add_argument("--num_workers", type=int, default=4)
@@ -226,7 +226,7 @@ def main():
 
     checkpoint_cb = ModelCheckpoint(
         dirpath=args.output_dir,
-        filename="mnist_vae_{epoch:04d}",
+        filename="fmnist_vae_{epoch:04d}",
         save_top_k=-1,
         every_n_epochs=args.save_every_n_epochs,
         save_last=True,
