@@ -10,8 +10,13 @@ outputs
 results
 taming
 taming-transformers
+<<<<<<< HEAD
 GroumdingDINO
 
 assets/data
 assets/checkpoints
+=======
+**/.egg*
+assets/data
+>>>>>>> 3e8ad0352fe06749aa2ffcfacb41c334255f5e28
 data

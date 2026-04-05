@@ -11,8 +11,8 @@
 
 data:
   name:  FashionMNIST
-  classes: [0, 2, 4, 6]
-  undersample: True
+  # classes: [0, 2, 4, 6]
+  classes: [0, 4]
 
 model:
   base_learning_rate: 3e-4 #4.5e-6
@@ -24,7 +24,7 @@ model:
     lossconfig:
       target: ldm.modules.losses.LPIPSWithDiscriminator
       params:
-        disc_start: 3000       # discriminator kicks in after 10 k steps
+        disc_start: 2000       # discriminator kicks in after 10 k steps
         kl_weight: 0.000001
         disc_weight: 0.5
 

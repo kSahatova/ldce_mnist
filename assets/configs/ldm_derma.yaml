@@ -30,9 +30,9 @@
 
 data:
   name:  DermaMNIST
-   classes: ['basal cell carcinoma', 'benign keratosis-like lesions', 'melanoma', 'melanocytic nevi'] 
-  # classes: ['benign keratosis-like lesions', 'melanoma']
-  undersample: False
+  # classes: ['basal cell carcinoma', 'benign keratosis-like lesions', 'melanoma', 'melanocytic nevi'] 
+  classes: ['benign keratosis-like lesions', 'melanoma'] 
+  undersample: false
 
 
 model:
@@ -47,7 +47,7 @@ model:
     first_stage_key: "image"
     cond_stage_key:  "class_label"
     # Spatial size of the latent tensor the UNet sees.
-    # With AutoencoderKL f=4 (2 downsampling stages): 32 / 4 = 8
+    # With AutoencoderKL f=4 (2 downsampling stages): 64 / 4 = 16
     image_size: 16 #8
     channels: 4             # latent channel depth (embed_dim of the VAE)
     cond_stage_trainable: false
@@ -80,7 +80,8 @@ model:
       target: ldm.models.autoencoder.AutoencoderKL
       params:
         embed_dim: 4
-        ckpt_path: "/teamspace/studios/this_studio/ldce/mnist_ldce/checkpoints/derna_vae/multi/derma_vae_best.ckpt"
+        ckpt_path: "assets/checkpoints/derma_vae/binary/derma_vae_best.ckpt"
+        # ckpt_path: "assets/checkpoints/derma_vae/multi/derma_vae_best.ckpt"
         lossconfig:
           target: torch.nn.Identity
         ddconfig:

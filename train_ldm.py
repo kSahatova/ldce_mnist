@@ -72,6 +72,9 @@ class DDPMDataset(Dataset):
             raise ValueError(
                 f"Unknown dataset '{dataset_name}'. Supported: {list(_DATASET_MAP)}"
             )
+        # DermaMNIST accepts `undersample`; MNIST/FashionMNIST do not.
+        if cls is not DermaMNIST:
+            dataset_kwargs.pop("undersample", None)
         self.data = cls(
             root=root,
             split=split,
@@ -118,7 +121,7 @@ class DataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.dataset_name = dataset_name
-        self.filter_classes = (filter_classes,)
+        self.filter_classes = filter_classes
         self.cfg_dropout = cfg_dropout
         self.dataset_kwargs = dataset_kwargs
 
@@ -194,7 +197,7 @@ def parse_args():
         "training to enable classifier-free guidance (default: 0.1)",
     )
     p.add_argument("--num_workers", type=int, default=4)
-    p.add_argument("--save_every_n_epochs", type=int, default=10)
+    p.add_argument("--save_every_n_epochs", type=int, default=5)
     p.add_argument(
         "--resume_ckpt",
         default=None,
@@ -219,16 +222,19 @@ def main():
     model = instantiate_from_config(config.model)
 
     datamodule = DataModule(
+        dataset_name=config.data.name,
         image_size=args.image_size,
         root=args.data_root,
+        filter_classes=config.data.classes,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         cfg_dropout=args.cfg_dropout,
+        undersample=config.data.get("undersample", False),
     )
 
     checkpoint_cb = ModelCheckpoint(
         dirpath=args.output_dir,
-        filename="mnist_ldm_{epoch:04d}",
+        filename="ldm_{epoch:04d}",
         save_top_k=-1,
         every_n_epochs=args.save_every_n_epochs,
         save_last=True,
@@ -236,7 +242,7 @@ def main():
     )
     best_cb = ModelCheckpoint(
         dirpath=args.output_dir,
-        filename="mnist_ldm_best",
+        filename="ldm_best",
         monitor="val/loss_simple_ema",
         mode="min",
         save_top_k=1,

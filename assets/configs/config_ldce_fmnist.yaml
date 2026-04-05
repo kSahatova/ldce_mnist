@@ -23,23 +23,24 @@ output_dir: assets/results/mnist/binary
 # ── Model paths ───────────────────────────────────────────────────────────────
 
 diffusion_model:
-  cfg_path:  "assets/configs/mnist/ldm_mnist.yaml"
-  ckpt_path: "assets/checkpoints/mnist_ldm/mnist_ldm_best.ckpt"
+  cfg_path:  "assets/configs/ldm_mnist.yaml"
+  ckpt_path: "assets/checkpoints/fmnist_ldm/binary/ldm_best.ckpt"
 
 classifier_model:
   args:
-      input_channels: 1
-      in_conv_channels: [1, 8, 16]
-      out_conv_channels: [8, 16, 32]
-      conv_kernels: [5, 5, 3]
-      softmax_flag: True
-      # num_classes: 10
-      num_classes: 2
-  class_map: {0: 1, 1: 8}          # classifier_index → MNIST_digit
+    model_class: "SimpleCNNtorch" # a class name of the predictive model to use
+    input_channels: 1 # number of input channels
+    in_conv_channels: [1, 8, 16] 
+    out_conv_channels: [8, 16, 32]
+    conv_kernels: [7, 5, 3]
+    softmax_flag: True
+    num_classes: 2
+    lightning_used: True
+  class_map: {0: 0, 1: 4}          # classifier_index → MNIST_digit
   input_size: 28
+  ckpt_path: "assets/checkpoints/fmnist_classifier/fmnist_0_4_epoch=06_val_accuracy=0.99.pth"
 
   # ckpt_path: "/teamspace/studios/this_studio/ldce/mnist_ldce/checkpoints/mnist_classifier/classifier_mnist.pth"
-  ckpt_path: "/teamspace/studios/this_studio/ldce/mnist_ldce/checkpoints/mnist_classifier/classifier_mnist_1_8.pth"
 
   # true  → classifier accepts raw [0, 1] images (no ImageNet normalisation).
   classifier_wrapper: true
@@ -68,15 +69,17 @@ seed: 0
 # ── Data settings ─────────────────────────────────────────────────────────────
 
 data:
-  root:        "/teamspace/studios/this_studio/ldce/mnist_ldce/data"
+  name:  FashionMNIST
+  root:        "./data"
   split:       "test"
   batch_size:  8
   # VAE input resolution — must stay 32×32 (latent becomes 8×8 inside the model).
   image_size:  32
   num_workers: 4
   max_samples: 100
-  filter_classes: [1]
+  filter_classes: [0]
   # filter_classes: [0, 3, 4, 5, 9]
+  undersample: False
 
 
 # ── Input perturbation ────────────────────────────────────────────────────────
@@ -91,7 +94,7 @@ perturbation:
 # ── Target class selection ────────────────────────────────────────────────────
 
 target_class_method: "fixed"
-target_class: 8
+target_class: 4
 
 
 # ── LDCE sampler hyper-parameters ────────────────────────────────────────────

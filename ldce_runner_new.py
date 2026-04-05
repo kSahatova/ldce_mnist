@@ -1,14 +1,14 @@
 """
-ldce_runner.py  –  cluster-ready LDCE counterfactual generation for MNIST.
+ldce_runner.py  –  cluster-ready LDCE counterfactual generation.
 
 For each sample the script generates a counterfactual explanation for:
   • the original input image
   • a noise-perturbed version of the same image  (if perturbation.enabled)
 
 Usage (from repository root):
-    python ldce_runner.py --config mnist_ldce/config.yaml
     python ldce_runner.py --config mnist_ldce/config.yaml --device cuda:1
 
+# TODO: update the output
 Output layout  (under output_dir/):
     original/           original input images
     cf_original/        counterfactuals of originals
@@ -40,18 +40,19 @@ from torchvision.utils import save_image
 
 from sampling_helpers import get_model, _unmap_img
 from ldm.models.diffusion.cc_ddim import CCMDDIMSampler
-from ldm.models.classifiers import CNNtorch
+import ldm.models.classifiers as _clf_module
 from utils.preprocessor import Normalizer
-from ldm.data.datasets  import MNIST, FashionMNIST, DermaMNIST
+from ldm.data.datasets import MNIST, FashionMNIST, DermaMNIST
 from ldm.data.utils import DIGIT_NAMES, MNIST_CLOSEST_CLASS
 
-UNCOND_CLASS_IDX = 10   # null class index in the DDPM's ClassEmbedder
+UNCOND_CLASS_IDX = 10  # null class index in the DDPM's ClassEmbedder
 _DATASET_MAP = {"MNIST": MNIST, "FashionMNIST": FashionMNIST, "DermaMNIST": DermaMNIST}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Progress tracking  (append-only, no folder scans during the run)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class CompletedTracker:
     """Tracks attempted sample IDs so they are never re-processed.
@@ -87,6 +88,7 @@ class CompletedTracker:
 # Classifier components
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class EvalOnlyModule(nn.Module):
     """Wraps a module and ignores all calls to .train(), keeping it in eval mode.
 
@@ -112,17 +114,17 @@ class ResizeWrapper(nn.Module):
     the classifier was trained at clf_size × clf_size on out_channels images.
     """
 
-    def __init__(self, model: nn.Module, clf_size: int,
-                 out_channels: int = 1) -> None:
+    def __init__(self, model: nn.Module, clf_size: int, out_channels: int = 1) -> None:
         super().__init__()
-        self.model        = model
-        self.clf_size     = clf_size
+        self.model = model
+        self.clf_size = clf_size
         self.out_channels = out_channels
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = F.interpolate(x, size=(self.clf_size, self.clf_size),
-                          mode="bilinear", align_corners=False)
-        return self.model(x[:, :self.out_channels])
+        x = F.interpolate(
+            x, size=(self.clf_size, self.clf_size), mode="bilinear", align_corners=False
+        )
+        return self.model(x[:, : self.out_channels])
 
 
 @contextlib.contextmanager
@@ -142,8 +144,10 @@ def _src_stub_context():
         def find_spec(self, fullname, path, target=None):  # noqa: ARG002
             if fullname == "src" or fullname.startswith("src."):
                 return importlib.machinery.ModuleSpec(fullname, self)
+
         def create_module(self, spec):
             return _SrcStub(spec.name)
+
         def exec_module(self, module):
             sys.modules[module.__name__] = module
 
@@ -155,29 +159,34 @@ def _src_stub_context():
         sys.meta_path.remove(finder)
 
 
-def load_classifier(args: dict, ckpt_path: str,
-                    device: torch.device) -> nn.Module:
-    model = CNNtorch(args["input_channels"], args["num_classes"])
+def load_classifier(args: dict, ckpt_path: str, device: torch.device) -> nn.Module:
+    args = dict(args)  # don't mutate the caller's dict
+    cls_name = args.pop("model_class", "CNNtorch")
+    cls = getattr(_clf_module, cls_name)
+    lightning_used = args.pop("lightning_used", False)
+    
+    model = cls(**args)
     with _src_stub_context():
-        checkpoint = torch.load(ckpt_path, weights_only=False,
-                                map_location=device)
+        checkpoint = torch.load(ckpt_path, weights_only=False, map_location=device)
+        
+        if lightning_used and "state_dict" in checkpoint:
+            checkpoint = checkpoint["state_dict"]
+    
     model.load_state_dict(checkpoint)
     return model.to(device).eval()
 
 
 def build_classifier(cfg: dict, device: torch.device) -> nn.Module:
     """Load classifier, apply resize/channel and normalisation wrappers."""
-    args          = cfg["classifier_model"]["args"]
-    clf_size      = cfg["classifier_model"].get("input_size",
-                                                cfg["data"]["image_size"])
+    args = cfg["classifier_model"]["args"]
+    clf_size = cfg["classifier_model"].get("input_size", cfg["data"]["image_size"])
     pipeline_size = cfg["data"]["image_size"]
-    in_ch         = args.get("input_channels", 1)
+    in_ch = args.get("input_channels", 1)
 
     model = load_classifier(args, cfg["classifier_model"]["ckpt_path"], device)
 
     if clf_size != pipeline_size or in_ch != 3:
-        print(f"  Classifier resize: {pipeline_size}→{clf_size}, "
-              f"channels: 3→{in_ch}")
+        print(f"  Classifier resize: {pipeline_size}→{clf_size}, channels: 3→{in_ch}")
         model = ResizeWrapper(model, clf_size, out_channels=in_ch)
 
     if cfg["classifier_model"].get("mnist_normalisation", False):
@@ -190,27 +199,33 @@ def build_classifier(cfg: dict, device: torch.device) -> nn.Module:
 # Diffusion model & sampler
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def build_diffusion_model(cfg: dict, device: torch.device) -> nn.Module:
-    return get_model(
-        cfg_path  = cfg["diffusion_model"]["cfg_path"],
-        ckpt_path = cfg["diffusion_model"]["ckpt_path"],
-    ).to(device).eval()
+    return (
+        get_model(
+            cfg_path=cfg["diffusion_model"]["cfg_path"],
+            ckpt_path=cfg["diffusion_model"]["ckpt_path"],
+        )
+        .to(device)
+        .eval()
+    )
 
 
-def build_sampler(diff_model: nn.Module, classifier: nn.Module,
-                  cfg: dict) -> tuple[CCMDDIMSampler, int]:
+def build_sampler(
+    diff_model: nn.Module, classifier: nn.Module, cfg: dict
+) -> tuple[CCMDDIMSampler, int]:
     sampler = CCMDDIMSampler(
-        diff_model, classifier,
-        seg_model                   = None,
-        classifier_wrapper          = cfg["classifier_model"].get(
-                                          "classifier_wrapper", True),
-        record_intermediate_results = cfg.get(
-                                          "record_intermediate_results", False),
-        verbose                     = True,
+        diff_model,
+        classifier,
+        seg_model=None,
+        classifier_wrapper=cfg["classifier_model"].get("classifier_wrapper", True),
+        record_intermediate_results=cfg.get("record_intermediate_results", False),
+        verbose=True,
         **cfg["sampler"],
     )
-    sampler.make_schedule(ddim_num_steps=cfg["ddim_steps"],
-                          ddim_eta=cfg["ddim_eta"], verbose=False)
+    sampler.make_schedule(
+        ddim_num_steps=cfg["ddim_steps"], ddim_eta=cfg["ddim_eta"], verbose=False
+    )
     t_enc = int(cfg["strength"] * len(sampler.ddim_timesteps))
     return sampler, t_enc
 
@@ -218,6 +233,7 @@ def build_sampler(diff_model: nn.Module, classifier: nn.Module,
 # ─────────────────────────────────────────────────────────────────────────────
 # Perturbation
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def perturb_sample(
     input_images: np.ndarray,
@@ -264,11 +280,10 @@ def perturb_sample(
         np.random.seed(noise_seed)
 
     if type == "normal":
-        mean       = np.zeros(channels * height * width)
-        covariance = np.eye(channels * height * width) * std ** 2
-        noise      = multivariate_normal(mean, covariance,
-                                         size=(batch_size, n_samples))
-        noise      = noise.reshape(*result_shape)
+        mean = np.zeros(channels * height * width)
+        covariance = np.eye(channels * height * width) * std**2
+        noise = multivariate_normal(mean, covariance, size=(batch_size, n_samples))
+        noise = noise.reshape(*result_shape)
         if epsilon is not None:
             noise = np.clip(noise, -epsilon, epsilon)
 
@@ -283,41 +298,20 @@ def perturb_sample(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Target class selection
-# ─────────────────────────────────────────────────────────────────────────────
-
-def get_target_classes(labels: torch.Tensor, logits: torch.Tensor,
-                       method: str, fixed_target: int | None,
-                       device: torch.device) -> torch.Tensor:
-    if method == "fixed":
-        return torch.full_like(labels, fixed_target)
-
-    targets = []
-    for j in range(len(labels)):
-        lbl = labels[j].item()
-        if method == "closest":
-            tgt = MNIST_CLOSEST_CLASS[lbl][0]
-        elif method == "random":
-            tgt = random.choice([c for c in range(10) if c != lbl])
-        elif method == "second_best":
-            tgt = next(
-                (c for c in logits[j].argsort(descending=True).tolist()
-                 if c != lbl),
-                MNIST_CLOSEST_CLASS[lbl][0],
-            )
-        else:
-            raise ValueError(f"Unknown target_class_method: '{method}'")
-        targets.append(tgt)
-    return torch.tensor(targets, device=device)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Counterfactual generation
 # ─────────────────────────────────────────────────────────────────────────────
 
-def generate_cf(diff_model: nn.Module, sampler: CCMDDIMSampler,
-                images: torch.Tensor, target_classes: torch.Tensor,
-                scale: float, t_enc: int, seed: int, inv_class_map: dict) -> torch.Tensor:
+
+def generate_cf(
+    diff_model: nn.Module,
+    sampler: CCMDDIMSampler,
+    images: torch.Tensor,
+    target_classes: torch.Tensor,
+    scale: float,
+    t_enc: int,
+    seed: int,
+    inv_class_map: dict,
+) -> torch.Tensor:
     """Encode → forward diffuse → guided denoise → decode.
 
     Returns:
@@ -328,7 +322,8 @@ def generate_cf(diff_model: nn.Module, sampler: CCMDDIMSampler,
     if inv_class_map is not None:
         y_clf = torch.tensor(
             [inv_class_map[t.item()] for t in target_classes],
-            dtype=torch.long, device=diff_model.device,
+            dtype=torch.long,
+            device=diff_model.device,
         )
     else:
         y_clf = target_classes.to(diff_model.device)
@@ -338,15 +333,19 @@ def generate_cf(diff_model: nn.Module, sampler: CCMDDIMSampler,
     )
 
     with torch.no_grad(), diff_model.ema_scope():
-        uc = diff_model.get_learned_conditioning({
-            diff_model.cond_stage_key: torch.full(
-                (B,), UNCOND_CLASS_IDX, dtype=torch.long,
-                device=diff_model.device,
-            )
-        })
-        c = diff_model.get_learned_conditioning({
-            diff_model.cond_stage_key: target_classes.to(diff_model.device)
-        })
+        uc = diff_model.get_learned_conditioning(
+            {
+                diff_model.cond_stage_key: torch.full(
+                    (B,),
+                    UNCOND_CLASS_IDX,
+                    dtype=torch.long,
+                    device=diff_model.device,
+                )
+            }
+        )
+        c = diff_model.get_learned_conditioning(
+            {diff_model.cond_stage_key: target_classes.to(diff_model.device)}
+        )
 
         torch.manual_seed(seed)
         z_enc = sampler.stochastic_encode(
@@ -356,14 +355,15 @@ def generate_cf(diff_model: nn.Module, sampler: CCMDDIMSampler,
         )
 
         torch.manual_seed(seed)
-        
 
         out = sampler.decode(
-            z_enc, c, t_enc,
-            unconditional_guidance_scale = scale,
-            unconditional_conditioning   = uc,
-            y                            = y_clf,
-            latent_t_0                   = False,
+            z_enc,
+            c,
+            t_enc,
+            unconditional_guidance_scale=scale,
+            unconditional_conditioning=uc,
+            y=y_clf,
+            latent_t_0=False,
         )
 
     return torch.clamp(
@@ -372,99 +372,9 @@ def generate_cf(diff_model: nn.Module, sampler: CCMDDIMSampler,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Result saving
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _cf_metrics(src: torch.Tensor, cf: torch.Tensor,
-                softmax: torch.Tensor, tgt: int) -> dict:
-    diff = src - cf
-    return {
-        "image_cf":      cf,
-        "pred":          DIGIT_NAMES[softmax.argmax().item()],
-        "confid":        softmax.max().item(),
-        "tgt_confid":    softmax[tgt].item(),
-        "l1":            torch.norm(diff, p=1).item(),
-        "l2":            torch.norm(diff, p=2).item(),
-    }
-
-
-"""def save_sample(uidx: int,
-                src: torch.Tensor, cf_orig: torch.Tensor,
-                label: int, tgt: int,
-                softmax_cf_orig: torch.Tensor,
-                cf_pert: torch.Tensor | None = None,
-                perturbed: torch.Tensor | None = None,
-                softmax_cf_pert: torch.Tensor | None = None,
-                save_only_successful: bool = True) -> dict | None:
-    """Build a record for one sample.
-
-    Returns a dict with the original image, its counterfactual explanation,
-    source class, and target class, or None if the sample is skipped.
-    The caller is responsible for accumulating records and writing the .pkl.
-    """
-    orig_success = softmax_cf_orig.argmax().item() == tgt
-    if save_only_successful and not orig_success:
-        return None
-
-    record = {
-        "unique_id": uidx,
-        "source":    DIGIT_NAMES[label],
-        "target":    DIGIT_NAMES[tgt],
-        "image":     src.cpu(),
-        "image_cf":  cf_orig.cpu(),
-    }
-
-    if cf_pert is not None:
-        pert_success = softmax_cf_pert.argmax().item() == tgt
-        if not save_only_successful or pert_success:
-            record["image_perturbed"]    = perturbed.cpu()
-            record["image_cf_perturbed"] = cf_pert.cpu()
-
-    return record
-"""
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Classifier evaluation
-# ─────────────────────────────────────────────────────────────────────────────
-
-def evaluate_classifier(classifier: nn.Module, cfg: dict,
-                        device: torch.device) -> None:
-    clf_size = cfg["classifier_model"].get("input_size",
-                                           cfg["data"]["image_size"])
-    split    = cfg["data"]["split"]
-    dataset  = MNISTForLDCE(root=cfg["data"]["root"], split=split,
-                             image_size=clf_size)
-    loader   = torch.utils.data.DataLoader(
-        dataset, batch_size=cfg["data"]["batch_size"], shuffle=False,
-        num_workers=cfg["data"].get("num_workers", 0),
-    )
-
-    correct = {c: 0 for c in range(10)}
-    total   = {c: 0 for c in range(10)}
-
-    with torch.inference_mode():
-        for images, labels, _ in loader:
-            preds = classifier(images.to(device)).argmax(dim=1).cpu()
-            for pred, lbl in zip(preds.tolist(), labels.tolist()):
-                total[lbl]   += 1
-                correct[lbl] += int(pred == lbl)
-
-    n_correct = sum(correct.values())
-    n_total   = sum(total.values())
-    accuracy  = n_correct / n_total if n_total else 0.0
-
-    print(f"\nClassifier  —  MNIST {split}  ({n_total} images)")
-    print(f"  Overall: {accuracy * 100:.2f}%  ({n_correct}/{n_total})")
-    for c in range(10):
-        acc = correct[c] / total[c] if total[c] else 0.0
-        print(f"    {DIGIT_NAMES[c]:>7} ({c}):  {acc * 100:6.2f}%  "
-              f"{'█' * int(acc * 20)}")
-    print()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Utilities
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def set_seed(seed: int) -> None:
     random.seed(seed)
@@ -496,16 +406,58 @@ def save_results_pkl(pkl_path: str, records: list[dict]) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Dataset
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def build_dataset(cfg: dict, skip_ids: set) -> torch.utils.data.Dataset:
+    """Instantiate the dataset specified by cfg['data']['name'].
+
+    Supported names (case-sensitive): 'MNIST', 'FashionMNIST', 'DermaMNIST'.
+    All parameters are read from cfg['data'].
+    """
+    data_cfg = cfg["data"]
+    name = data_cfg.get("name", "MNIST")
+    if name not in _DATASET_MAP:
+        raise ValueError(f"Unknown dataset '{name}'. Choose from: {list(_DATASET_MAP)}")
+    cls = _DATASET_MAP[name]
+
+    if name in ("MNIST", "FashionMNIST"):
+        return cls(
+            root=data_cfg["root"],
+            split=data_cfg["split"],
+            image_size=data_cfg["image_size"],
+            max_samples=data_cfg.get("max_samples"),
+            classes=data_cfg.get("filter_classes"),
+            skip_ids=skip_ids,
+        )
+
+    if name == "DermaMNIST":
+        return cls(
+            root=data_cfg["root"],
+            image_size=data_cfg["image_size"],
+            split=data_cfg["split"],
+            download=data_cfg.get("download", True),
+            undersample=data_cfg.get("undersample", True),
+            channels_first=data_cfg.get("channels_first", True),
+            classes=data_cfg.get("filter_classes", ["all"]),
+        )
+
+    raise ValueError(f"Unhandled dataset name: '{name}'")  # unreachable
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def main(cfg: dict, device: torch.device) -> None:
     seed = cfg.get("seed", 10)
     set_seed(seed)
 
-    out_dir        = cfg["output_dir"]
-    pert_cfg       = cfg.get("perturbation", {})
-    with_pert      = pert_cfg.get("enabled", False)
+    out_dir = cfg["output_dir"]
+    pert_cfg = cfg.get("perturbation", {})
+    with_pert = pert_cfg.get("enabled", False)
     save_only_succ = cfg.get("save_only_successful", True)
 
     # TODO : change saving strategy to the more optimal one
@@ -514,8 +466,8 @@ def main(cfg: dict, device: torch.device) -> None:
 
     pkl_path_orig = os.path.join(out_dir, "results_original.pkl")
     pkl_path_pert = os.path.join(out_dir, "results_perturbed.pkl")
-    records_orig  = load_results_pkl(pkl_path_orig)
-    records_pert  = load_results_pkl(pkl_path_pert)
+    records_orig = load_results_pkl(pkl_path_orig)
+    records_pert = load_results_pkl(pkl_path_pert)
     print(f"  results_original.pkl : {len(records_orig)} records already saved")
     print(f"  results_perturbed.pkl: {len(records_pert)} records already saved")
 
@@ -529,29 +481,25 @@ def main(cfg: dict, device: torch.device) -> None:
         inv_class_map = class_map
 
     # ── Dataset ───────────────────────────────────────────────────────────────
-    dataset = MNISTForLDCE(
-        root           = cfg["data"]["root"],
-        split          = cfg["data"]["split"],
-        image_size     = cfg["data"]["image_size"],
-        max_samples    = cfg["data"].get("max_samples"),
-        filter_classes = cfg["data"].get("filter_classes"),
-        skip_ids       = tracker.done,
+    dataset = build_dataset(cfg, tracker.done)
+    print(
+        f"Dataset ({cfg['data'].get('name', 'MNIST')}): "
+        f"{len(dataset)} samples remaining  "
+        f"({len(tracker.done)} already completed)\n"
     )
-    print(f"Dataset: {len(dataset)} samples remaining  "
-          f"({len(tracker.done)} already completed)\n")
 
     loader = torch.utils.data.DataLoader(
         dataset,
-        batch_size  = cfg["data"]["batch_size"],
-        shuffle     = False,
-        num_workers = cfg["data"].get("num_workers", 4),
-        pin_memory  = device.type == "cuda",
+        batch_size=cfg["data"]["batch_size"],
+        shuffle=False,
+        num_workers=cfg["data"].get("num_workers", 4),
+        pin_memory=device.type == "cuda",
     )
 
-    target_method = cfg.get("target_class_method", "closest")
-    fixed_target  = cfg.get("target_class")
-    total_orig    = 0
-    total_pert    = 0
+    # target_method = cfg.get("target_class_method", "closest")
+    fixed_target = cfg.get("target_class")
+    total_orig = 0
+    total_pert = 0
 
     # ── Models ────────────────────────────────────────────────────────────────
     print("Loading classifier …")
@@ -560,8 +508,8 @@ def main(cfg: dict, device: torch.device) -> None:
     print("Loading diffusion model …")
     diff_model = build_diffusion_model(cfg, device)
 
-    if cfg.get("evaluate_classifier", False):
-        evaluate_classifier(classifier, cfg, device)
+    # if cfg.get("evaluate_classifier", False):
+    #     evaluate_classifier(classifier, cfg, device)
 
     sampler, t_enc = build_sampler(diff_model, classifier, cfg)
 
@@ -573,27 +521,31 @@ def main(cfg: dict, device: torch.device) -> None:
         with torch.inference_mode():
             logits_in = classifier(images)
 
-        tgt_classes = get_target_classes(
-            labels, logits_in, target_method, fixed_target, device
-        )
+        tgt_classes = torch.full_like(labels, fixed_target).to(device)
 
         # ── Original counterfactuals ──────────────────────────────────────────
         cf_orig = generate_cf(
-            diff_model, sampler, images, tgt_classes,
-            cfg["scale"], t_enc, seed, inv_class_map
+            diff_model,
+            sampler,
+            images,
+            tgt_classes,
+            cfg["scale"],
+            t_enc,
+            seed,
+            inv_class_map,
         )
 
         with torch.inference_mode():
             logits_cf_orig = classifier(cf_orig)
 
-        sm_in      = logits_in.softmax(dim=1).cpu()
+        sm_in = logits_in.softmax(dim=1).cpu()
         sm_cf_orig = logits_cf_orig.softmax(dim=1).cpu()
 
         # ── Collect original records ──────────────────────────────────────────
         batch_orig = []
         for j in range(len(labels)):
-            uidx  = unique_ids[j].item()
-            tgt   = tgt_classes[j].item()
+            uidx = unique_ids[j].item()
+            tgt = tgt_classes[j].item()
             label = labels[j].item()
 
             orig_success = sm_cf_orig[j].argmax().item() == tgt
@@ -601,40 +553,50 @@ def main(cfg: dict, device: torch.device) -> None:
             if save_only_succ and not orig_success:
                 continue
 
-            batch_orig.append({
-                "unique_id": uidx,
-                "source":    DIGIT_NAMES[label],
-                "target":    DIGIT_NAMES[tgt],
-                "image":     images[j].cpu(),
-                "image_cf":  cf_orig[j].cpu(),
-            })
+            batch_orig.append(
+                {
+                    "unique_id": uidx,
+                    "source": DIGIT_NAMES[label],
+                    "target": DIGIT_NAMES[tgt],
+                    "image": images[j].cpu(),
+                    "image_cf": cf_orig[j].cpu(),
+                }
+            )
 
         # ── Perturbed counterfactuals (one record per sample × epsilon) ───────
         batch_pert = []
         if with_pert:
             epsilon_list = pert_cfg.get("magnitude", [0.1])
-            pert_type    = pert_cfg.get("type", "uniform")
-            images_np    = images.cpu().numpy()
+            pert_type = pert_cfg.get("type", "uniform")
+            images_np = images.cpu().numpy()
 
             for epsilon in epsilon_list:
-                print(f'Perturbing original images with the noise bounded by eps={epsilon}')
+                print(
+                    f"Perturbing original images with the noise bounded by eps={epsilon}"
+                )
                 # perturb_sample returns (B, n_samples, C, H, W); n_samples=1
                 perturbed_np = perturb_sample(
                     images_np,
-                    n_samples     = 1,
-                    type          = pert_type,
-                    epsilon       = epsilon,
-                    channels_last = False,
-                    std           = pert_cfg.get("std", 0.1),
-                    noise_seed    = pert_cfg.get("noise_seed"),
-                )                                          # → (B, 1, C, H, W)
+                    n_samples=1,
+                    type=pert_type,
+                    epsilon=epsilon,
+                    channels_last=False,
+                    std=pert_cfg.get("std", 0.1),
+                    noise_seed=pert_cfg.get("noise_seed"),
+                )  # → (B, 1, C, H, W)
                 perturbed = torch.from_numpy(
                     perturbed_np[:, 0].astype(np.float32)  # → (B, C, H, W) float32
                 ).to(device)
 
                 cf_pert = generate_cf(
-                    diff_model, sampler, perturbed, tgt_classes,
-                    cfg["scale"], t_enc, seed, inv_class_map
+                    diff_model,
+                    sampler,
+                    perturbed,
+                    tgt_classes,
+                    cfg["scale"],
+                    t_enc,
+                    seed,
+                    inv_class_map,
                 )
                 with torch.inference_mode():
                     logits_cf_pert = classifier(cf_pert)
@@ -642,21 +604,23 @@ def main(cfg: dict, device: torch.device) -> None:
                 sm_cf_pert = logits_cf_pert.softmax(dim=1).cpu()
 
                 for j in range(len(labels)):
-                    tgt   = tgt_classes[j].item()
+                    tgt = tgt_classes[j].item()
                     label = labels[j].item()
 
                     pert_success = sm_cf_pert[j].argmax().item() == tgt
                     if save_only_succ and not pert_success:
                         continue
 
-                    batch_pert.append({
-                        "unique_id":         unique_ids[j].item(),
-                        "epsilon":           epsilon,
-                        "source":            DIGIT_NAMES[label],
-                        "target":            DIGIT_NAMES[tgt],
-                        "image_perturbed":   perturbed[j].cpu(),
-                        "image_cf_perturbed": cf_pert[j].cpu(),
-                    })
+                    batch_pert.append(
+                        {
+                            "unique_id": unique_ids[j].item(),
+                            "epsilon": epsilon,
+                            "source": DIGIT_NAMES[label],
+                            "target": DIGIT_NAMES[tgt],
+                            "image_perturbed": perturbed[j].cpu(),
+                            "image_cf_perturbed": cf_pert[j].cpu(),
+                        }
+                    )
 
         # ── Persist & report ──────────────────────────────────────────────────
         records_orig.extend(batch_orig)
@@ -666,32 +630,34 @@ def main(cfg: dict, device: torch.device) -> None:
 
         total_orig += len(batch_orig)
         total_pert += len(batch_pert)
-        print(f"  Batch {i}: +{len(batch_orig)} orig, +{len(batch_pert)} pert  "
-              f"(running totals — orig: {total_orig}, pert: {total_pert})")
-        print(f"  orig preds: {logits_in.argmax(1).tolist()}  →  "
-              f"{logits_cf_orig.argmax(1).tolist()}")
+        print(
+            f"  Batch {i}: +{len(batch_orig)} orig, +{len(batch_pert)} pert  "
+            f"(running totals — orig: {total_orig}, pert: {total_pert})"
+        )
+        print(
+            f"  orig preds: {logits_in.argmax(1).tolist()}  →  "
+            f"{logits_cf_orig.argmax(1).tolist()}"
+        )
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        description="LDCE counterfactual generation for MNIST"
+    p = argparse.ArgumentParser(description="LDCE counterfactual generation for MNIST")
+    p.add_argument("--config", required=True, help="Path to config.yaml")
+    p.add_argument(
+        "--device",
+        default=None,
+        help="torch device (e.g. cuda, cuda:1, cpu). Defaults to cuda if available.",
     )
-    p.add_argument("--config", required=True,
-                   help="Path to config.yaml")
-    p.add_argument("--device", default=None,
-                   help="torch device (e.g. cuda, cuda:1, cpu). "
-                        "Defaults to cuda if available.")
     return p.parse_args()
 
 
 if __name__ == "__main__":
-    args   = parse_args()
+    args = parse_args()
     # args = easydict.EasyDict({'config': 'ldce/mnist_ldce/configs/mnist/config_ldce_mnist.yaml',
     #         'device': 'cuda'})
-    cfg    = load_config(args.config)
+    cfg = load_config(args.config)
     device = torch.device(
-        args.device if args.device else
-        ("cuda" if torch.cuda.is_available() else "cpu")
+        args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu")
     )
     print(f"Device : {device}")
     print(f"Config : {args.config}\n")
