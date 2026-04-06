@@ -79,8 +79,8 @@ model:
       target: ldm.models.autoencoder.AutoencoderKL
       params:
         embed_dim: 4
-        ckpt_path: "assets/checkpoints/fmnist_vae/multi/fmnist_vae_best.ckpt"
-        # ckpt_path: "assets/checkpoints/fmnist_vae/binary/fmnist_vae_best.ckpt"
+        # ckpt_path: "assets/checkpoints/fmnist_vae/multi/fmnist_vae_best.ckpt"
+        ckpt_path: "assets/checkpoints/fmnist_vae/binary/fmnist_vae_best.ckpt"
         lossconfig:
           target: torch.nn.Identity
         ddconfig:

@@ -36,13 +36,15 @@ from torchvision import datasets, transforms
 from ldm.util import instantiate_from_config
 from ldm.data.datasets import MNIST, FashionMNIST, DermaMNIST
 
-_DATASET_MAP = {"MNIST": MNIST, "FashionMNIST": FashionMNIST, "DermaMNIST": DermaMNIST}
+_DATASET_MAP = {"MNIST": MNIST, 
+                "FashionMNIST": FashionMNIST, 
+                "DermaMNIST": DermaMNIST}
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 # Index reserved for the unconditional / null class in the ClassEmbedder.
-# Must match n_classes - 1 in ldm_mnist.yaml (10 digits → index 10).
-NULL_CLASS = 10
+# Derived from the config at runtime: n_classes - 1.
+NULL_CLASS: int | None = None  # set in main() after loading config
 
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
@@ -59,6 +61,7 @@ class DDPMDataset(Dataset):
     def __init__(
         self,
         split: str,
+        null_class: int,
         dataset_name: str = "MNIST",
         image_size: int = 32,
         root: str = "./data",
@@ -67,6 +70,7 @@ class DDPMDataset(Dataset):
         **dataset_kwargs,
     ):
         self.cfg_dropout = cfg_dropout
+        self.null_class = null_class
         cls = _DATASET_MAP.get(dataset_name)
         if cls is None:
             raise ValueError(
@@ -92,7 +96,7 @@ class DDPMDataset(Dataset):
         image = image.permute(1, 2, 0)  # (3, H, W) → (H, W, 3)
 
         if self.cfg_dropout > 0 and torch.rand(1).item() < self.cfg_dropout:
-            label = NULL_CLASS
+            label = self.null_class
 
         return {
             "image": image.contiguous(),
@@ -113,6 +117,7 @@ class DataModule(pl.LightningDataModule):
         dataset_name: str,
         filter_classes: list,
         cfg_dropout: float,
+        null_class: int,
         **dataset_kwargs,
     ):
         super().__init__()
@@ -123,6 +128,7 @@ class DataModule(pl.LightningDataModule):
         self.dataset_name = dataset_name
         self.filter_classes = filter_classes
         self.cfg_dropout = cfg_dropout
+        self.null_class = null_class
         self.dataset_kwargs = dataset_kwargs
 
     def setup(self, stage=None):
@@ -131,6 +137,7 @@ class DataModule(pl.LightningDataModule):
             image_size=self.image_size,
             root=self.root,
             classes=self.filter_classes,
+            null_class=self.null_class,
             **self.dataset_kwargs,
         )
         self.train_ds = DDPMDataset("train", **kwargs)
@@ -221,6 +228,8 @@ def main():
 
     model = instantiate_from_config(config.model)
 
+    null_class = config.model.params.cond_stage_config.params.n_classes - 1
+
     datamodule = DataModule(
         dataset_name=config.data.name,
         image_size=args.image_size,
@@ -229,6 +238,7 @@ def main():
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         cfg_dropout=args.cfg_dropout,
+        null_class=null_class,
         undersample=config.data.get("undersample", False),
     )
 

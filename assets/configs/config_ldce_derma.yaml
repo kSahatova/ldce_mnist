@@ -25,7 +25,7 @@ output_dir: assets/results/derma/binary
 diffusion_model:
   cfg_path:  "assets/configs/ldm_derma.yaml"
   # ckpt_path: "assets/checkpoints/derma_ldm/multi/ldm_best.ckpt"
-  ckpt_path: "assets/checkpoints/derma_ldm/binary/ldm_best.ckpt"
+  ckpt_path: "assets/checkpoints/derma_ldm/binary/cc/ldm_best.ckpt"
 
 classifier_model:
   args:
@@ -86,7 +86,7 @@ data:
   image_size:  64
   num_workers: 4
   max_samples: 100
-  filter_classes: ["benign keratosis-like lesions"]
+  filter_classes: ["benign keratosis-like lesions", "melanoma"]
   # filter_classes: [1, 2, 5]
   undersample: False
 

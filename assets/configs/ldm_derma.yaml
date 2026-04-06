@@ -50,7 +50,7 @@ model:
     # With AutoencoderKL f=4 (2 downsampling stages): 64 / 4 = 16
     image_size: 16 #8
     channels: 4             # latent channel depth (embed_dim of the VAE)
-    cond_stage_trainable: false
+    cond_stage_trainable: true #false
     conditioning_key: crossattn
     monitor: val/loss_simple_ema
     scale_factor: 1.0       # overwritten on first batch when scale_by_std=true
@@ -100,6 +100,6 @@ model:
     cond_stage_config:
       target: ldm.modules.encoders.modules.ClassEmbedder
       params:
-        n_classes: 11         # 10 digit classes + 1 null/unconditional (index 10)
+        n_classes: 3 #11         # 10 digit classes + 1 null/unconditional (index 10)
         embed_dim: 128 #256        # must match unet_config.context_dim
         key: "class_label"

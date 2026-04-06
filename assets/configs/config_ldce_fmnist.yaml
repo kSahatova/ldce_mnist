@@ -16,8 +16,8 @@ resume: false
 record_intermediate_results: false
 evaluate_classifier: false
 save_only_successful: false
-output_dir: assets/results/fmnist/multi
-# output_dir: assets/results/fmnist/binary
+# output_dir: assets/results/fmnist/multi
+output_dir: assets/results/fmnist/binary
 
 
 # ── Model paths ───────────────────────────────────────────────────────────────
@@ -34,14 +34,14 @@ classifier_model:
     out_conv_channels: [8, 16, 32]
     conv_kernels: [7, 5, 3]
     softmax_flag: True
-    num_classes: 4
-    # num_classes: 2
+    # num_classes: 4
+    num_classes: 2
     lightning_used: True
-  class_map: {0: 0, 1: 2, 2: 4, 3: 6}          # classifier_index → MNIST_digit
-  # class_map: {0: 0, 1: 4}          # classifier_index → MNIST_digit
+  # class_map: {0: 0, 1: 2, 2: 4, 3: 6}          # classifier_index → MNIST_digit
+  class_map: {0: 0, 1: 4}          # classifier_index → MNIST_digit
   input_size: 28
-  ckpt_path: "assets/checkpoints/fmnist_classifier/fmnist__epoch=12_val_accuracy=0.84.pth"
-  # ckpt_path: "assets/checkpoints/fmnist_classifier/fmnist_0_4_epoch=06_val_accuracy=0.99.pth"
+  # ckpt_path: "assets/checkpoints/fmnist_classifier/fmnist__epoch=12_val_accuracy=0.84.pth"
+  ckpt_path: "assets/checkpoints/fmnist_classifier/fmnist_0_4_epoch=06_val_accuracy=0.99.pth"
 
 
   # true  → classifier accepts raw [0, 1] images (no ImageNet normalisation).
@@ -79,8 +79,8 @@ data:
   image_size:  32
   num_workers: 4
   max_samples: 100
-  filter_classes: [0, 1, 6]
-  # filter_classes: [0]
+  # filter_classes: [0, 1, 6]
+  filter_classes: [0]
   undersample: False
 
 
